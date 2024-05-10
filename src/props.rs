@@ -1,42 +1,55 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs;
-use std::io::{LineWriter, Write};
+use std::io::{BufWriter, Write};
 use std::path::Path;
 
 use serde_json::Value;
 
+use crate::props::PropertyConstructionError::{TopLevelArrayError, TopLevelPrimitiveError};
+
 pub struct Properties {
-  props: HashMap<String, String>,
+  props: BTreeMap<String, String>,
 }
 
 #[derive(Debug)]
-pub struct PropertyConstructionError;
+pub enum PropertyConstructionError {
+  TopLevelPrimitiveError(Value),
+  TopLevelArrayError(Value),
+}
 
 impl Display for PropertyConstructionError {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    todo!()
+    match self {
+      TopLevelPrimitiveError(v) => write!(
+        f, "JSON value is a primitive, which cannot be formatted as properties: {}",
+        v.to_string()),
+      TopLevelArrayError(_) => write!(
+        f, "JSON value is an array, which cannot be formatted as properties.\n\
+        Break up the JSON into individual objects and convert them separately!"),
+    }
   }
 }
 
 impl Error for PropertyConstructionError {}
 
 impl TryFrom<Value> for Properties {
-  type Error = anyhow::Error;
+  type Error = PropertyConstructionError;
 
   fn try_from(value: Value) -> Result<Self, Self::Error> {
     match value {
       Value::Object(object_map) => Ok(Self::parse_internal(object_map)),
       Value::Null => Ok(Self::empty()),
-      _ => Err(anyhow::Error::new(PropertyConstructionError)),
+      Value::String(_) | Value::Bool(_) | Value::Number(_) => Err(TopLevelPrimitiveError(value)),
+      Value::Array(_) => Err(TopLevelArrayError(value)),
     }
   }
 }
 
 impl Properties {
   fn parse_internal(object_map: serde_json::Map<String, Value>) -> Self {
-    let props: HashMap<String, String> = object_map.into_iter()
+    let props: BTreeMap<String, String> = object_map.into_iter()
       .flat_map(|(s, v)| Self::parse_value(&s, v).into_iter())
       .collect();
     Properties { props }
@@ -72,31 +85,20 @@ impl Properties {
 
   fn empty() -> Self {
     Properties {
-      props: HashMap::new()
+      props: BTreeMap::new()
     }
   }
 }
-
-#[derive(Debug)]
-pub struct PropertyExportErr;
-
-impl Display for PropertyExportErr {
-  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    todo!()
-  }
-}
-
-impl Error for PropertyExportErr {}
 
 impl Properties {
   pub fn export(self, path: &Path) -> Result<(), anyhow::Error> {
-    let f = fs::OpenOptions::new().create(true).append(true).open(path)?;
-    let mut f = LineWriter::new(f);
-    for (a, b) in self.props {
-      println!("{a}={b}");
-      write!(f, "{a}={b}")?;
+    let f = fs::File::create(path)?;
+    let mut w = BufWriter::new(f);
+    for (k, v) in self.props {
+      write!(w, "{k}={v}\n")?;
     }
-    Ok::<(), anyhow::Error>(())
+    w.flush()?;
+    Ok(())
   }
 }
 
@@ -120,7 +122,6 @@ mod tests {
     assert_key_has_value(&prop, "a", "a value");
     assert_key_has_value(&prop, "b", "b value");
     assert_key_has_value(&prop, "c", "false");
-
   }
 
   #[test]
