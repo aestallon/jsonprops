@@ -7,6 +7,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use crate::app_config::{Config, ListHandling};
 use crate::props::PropertyConstructionError::{TopLevelArrayError, TopLevelPrimitiveError};
 
 pub struct Properties {
@@ -34,28 +35,24 @@ impl Display for PropertyConstructionError {
 
 impl Error for PropertyConstructionError {}
 
-impl TryFrom<Value> for Properties {
-  type Error = PropertyConstructionError;
-
-  fn try_from(value: Value) -> Result<Self, Self::Error> {
+impl Properties {
+  pub fn try_from(value: Value, config: &Config) -> Result<Self, PropertyConstructionError> {
     match value {
-      Value::Object(object_map) => Ok(Self::parse_internal(object_map)),
+      Value::Object(object_map) => Ok(Self::parse_internal(object_map, config)),
       Value::Null => Ok(Self::empty()),
       Value::String(_) | Value::Bool(_) | Value::Number(_) => Err(TopLevelPrimitiveError(value)),
       Value::Array(_) => Err(TopLevelArrayError(value)),
     }
   }
-}
 
-impl Properties {
-  fn parse_internal(object_map: serde_json::Map<String, Value>) -> Self {
+  fn parse_internal(object_map: serde_json::Map<String, Value>, config: &Config) -> Self {
     let props: BTreeMap<String, String> = object_map.into_iter()
-      .flat_map(|(s, v)| Self::parse_value(&s, v).into_iter())
+      .flat_map(|(s, v)| Self::parse_value(&s, v, config).into_iter())
       .collect();
     Properties { props }
   }
 
-  fn parse_value(namespace: &str, value: Value) -> Vec<(String, String)> {
+  fn parse_value(namespace: &str, value: Value, config: &Config) -> Vec<(String, String)> {
     match value {
       Value::Null => vec![(String::from(namespace), String::from(""))],
       Value::Number(n) => vec![(String::from(namespace), n.to_string())],
@@ -64,15 +61,26 @@ impl Properties {
       Value::Object(object_map) => object_map.into_iter()
         .flat_map(|(s, v)| {
           let inner_namespace = Self::concat_namespace(namespace, s);
-          Self::parse_value(&inner_namespace, v)
+          Self::parse_value(&inner_namespace, v, config)
         })
         .collect::<Vec<(String, String)>>(),
-      Value::Array(values) => values.into_iter().enumerate()
-        .flat_map(|(i, v)| {
-          let inner_namespace = Self::concat_namespace(namespace, i.to_string());
-          Self::parse_value(&inner_namespace, v)
-        })
-        .collect::<Vec<(String, String)>>(),
+      Value::Array(values) => match config.list_handling() {
+        ListHandling::SingleProp => if Self::has_only_primitives(&values) {
+          let list_val = values.iter().map(|it| it.to_string()).fold(String::new(), |mut a, b|  {
+            a.push_str(&b);
+            a
+          });
+          vec![(String::from(namespace), list_val)]
+        } else {
+          vec![]
+        },
+        ListHandling::MultiProp => values.into_iter().enumerate()
+          .flat_map(|(i, v)| {
+            let inner_namespace = Self::concat_namespace(namespace, i.to_string());
+            Self::parse_value(&inner_namespace, v, config)
+          })
+          .collect::<Vec<(String, String)>>(),
+      },
     }
   }
 
@@ -81,6 +89,13 @@ impl Properties {
     inner_namespace.push('.');
     inner_namespace.push_str(&sub_key);
     inner_namespace
+  }
+
+  fn has_only_primitives(values: &[Value]) -> bool {
+    values.iter().all(|v| match v {
+      Value::Array { .. } | Value::Object { .. } => false,
+      _ => true
+    })
   }
 
   fn empty() -> Self {

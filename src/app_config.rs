@@ -6,10 +6,22 @@ use std::path::{Path, PathBuf};
 use crate::STR_EMPTY;
 
 #[derive(Debug)]
+pub enum AppConfig {
+  HelpConfig
+}
+
+#[derive(Debug)]
 pub struct Config {
   source: PathBuf,
   dest: PathBuf,
   pub debug: bool,
+  list_handling: ListHandling
+}
+
+#[derive(Debug)]
+pub enum ListHandling {
+  SingleProp,
+  MultiProp,
 }
 
 #[derive(Debug)]
@@ -57,6 +69,7 @@ impl Config {
       source,
       dest,
       debug: false,
+      list_handling: ListHandling::SingleProp
     })
   }
 
@@ -74,5 +87,9 @@ impl Config {
 
   pub fn dest(&self) -> &Path {
     &self.dest
+  }
+  
+  pub fn list_handling(&self) -> &ListHandling {
+    &self.list_handling
   }
 }
