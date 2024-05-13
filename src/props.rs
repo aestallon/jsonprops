@@ -119,6 +119,9 @@ impl Properties {
 
 #[cfg(test)]
 mod tests {
+  use std::path::{Path, PathBuf};
+  use crate::app_config::Config;
+  use crate::app_config::ListHandling::MultiProp;
   use crate::props::Properties;
 
   fn assert_key_has_value(prop: &Properties, key: &str, expected: &str) {
@@ -128,12 +131,13 @@ mod tests {
 
   #[test]
   fn foo_1() {
+    let config = Config::empty();
     let value = serde_json::json!({
         "a" : "a value",
         "b" : "b value",
         "c" : false
     });
-    let prop = Properties::try_from(value).expect("JSON is parsed");
+    let prop = Properties::try_from(value, &config).expect("JSON is parsed");
     assert_key_has_value(&prop, "a", "a value");
     assert_key_has_value(&prop, "b", "b value");
     assert_key_has_value(&prop, "c", "false");
@@ -141,6 +145,7 @@ mod tests {
 
   #[test]
   fn foo_2() {
+    let config = Config::empty();
     let value = serde_json::json!({
       "a" : "a value",
       "b" : {
@@ -152,7 +157,7 @@ mod tests {
         "foo" : 999
       }
     });
-    let prop = Properties::try_from(value).expect("JSON is parsed");
+    let prop = Properties::try_from(value, &config).expect("JSON is parsed");
     assert_eq!(prop.props.len(), 5);
     assert_key_has_value(&prop, "a", "a value");
     assert_key_has_value(&prop, "b.foo", "123");

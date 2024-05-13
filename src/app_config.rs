@@ -15,7 +15,7 @@ pub struct Config {
   source: PathBuf,
   dest: PathBuf,
   pub debug: bool,
-  list_handling: ListHandling
+  list_handling: ListHandling,
 }
 
 #[derive(Debug)]
@@ -69,8 +69,17 @@ impl Config {
       source,
       dest,
       debug: false,
-      list_handling: ListHandling::SingleProp
+      list_handling: ListHandling::SingleProp,
     })
+  }
+
+  pub fn empty() -> Config {
+    Config {
+      source: PathBuf::new(),
+      dest: PathBuf::new(),
+      debug: true,
+      list_handling: ListHandling::MultiProp,
+    }
   }
 
   fn invalid_path_error(path: &Path) -> ConfigCreationError {
@@ -88,7 +97,7 @@ impl Config {
   pub fn dest(&self) -> &Path {
     &self.dest
   }
-  
+
   pub fn list_handling(&self) -> &ListHandling {
     &self.list_handling
   }
