@@ -37,65 +37,7 @@ impl Error for PropertyConstructionError {}
 
 impl Properties {
   pub fn try_from(value: Value, config: &Config) -> Result<Self, PropertyConstructionError> {
-    match value {
-      Value::Object(object_map) => Ok(Self::parse_internal(object_map, config)),
-      Value::Null => Ok(Self::empty()),
-      Value::String(_) | Value::Bool(_) | Value::Number(_) => Err(TopLevelPrimitiveError(value)),
-      Value::Array(_) => Err(TopLevelArrayError(value)),
-    }
-  }
-
-  fn parse_internal(object_map: serde_json::Map<String, Value>, config: &Config) -> Self {
-    let props: BTreeMap<String, String> = object_map.into_iter()
-      .flat_map(|(s, v)| Self::parse_value(&s, v, config).into_iter())
-      .collect();
-    Properties { props }
-  }
-
-  fn parse_value(namespace: &str, value: Value, config: &Config) -> Vec<(String, String)> {
-    match value {
-      Value::Null => vec![(String::from(namespace), String::from(""))],
-      Value::Number(n) => vec![(String::from(namespace), n.to_string())],
-      Value::String(s) => vec![(String::from(namespace), s)],
-      Value::Bool(b) => vec![(String::from(namespace), b.to_string())],
-      Value::Object(object_map) => object_map.into_iter()
-        .flat_map(|(s, v)| {
-          let inner_namespace = Self::concat_namespace(namespace, s);
-          Self::parse_value(&inner_namespace, v, config)
-        })
-        .collect::<Vec<(String, String)>>(),
-      Value::Array(values) => match config.list_handling() {
-        ListHandling::SingleProp => if Self::has_only_primitives(&values) {
-          let list_val = values.iter().map(|it| it.to_string()).fold(String::new(), |mut a, b|  {
-            a.push_str(&b);
-            a
-          });
-          vec![(String::from(namespace), list_val)]
-        } else {
-          vec![]
-        },
-        ListHandling::MultiProp => values.into_iter().enumerate()
-          .flat_map(|(i, v)| {
-            let inner_namespace = Self::concat_namespace(namespace, i.to_string());
-            Self::parse_value(&inner_namespace, v, config)
-          })
-          .collect::<Vec<(String, String)>>(),
-      },
-    }
-  }
-
-  fn concat_namespace(namespace: &str, sub_key: String) -> String {
-    let mut inner_namespace = String::from(namespace);
-    inner_namespace.push('.');
-    inner_namespace.push_str(&sub_key);
-    inner_namespace
-  }
-
-  fn has_only_primitives(values: &[Value]) -> bool {
-    values.iter().all(|v| match v {
-      Value::Array { .. } | Value::Object { .. } => false,
-      _ => true
-    })
+    PropertiesBuilder(config).build(value)
   }
 
   fn empty() -> Self {
@@ -117,9 +59,76 @@ impl Properties {
   }
 }
 
+struct PropertiesBuilder<'a>(&'a Config);
+
+impl<'a> PropertiesBuilder<'_> {
+  fn build(&'a self, value: Value) -> Result<Properties, PropertyConstructionError> {
+    match value {
+      Value::Object(object_map) => Ok(self.parse_internal(object_map)),
+      Value::Null => Ok(Properties::empty()),
+      Value::String(_) | Value::Bool(_) | Value::Number(_) => Err(TopLevelPrimitiveError(value)),
+      Value::Array(_) => Err(TopLevelArrayError(value)),
+    }
+  }
+
+  fn parse_internal(&self, object_map: serde_json::Map<String, Value>) -> Properties {
+    let props: BTreeMap<String, String> = object_map.into_iter()
+      .flat_map(|(s, v)| self.parse_value(&s, v).into_iter())
+      .collect();
+    Properties { props }
+  }
+
+  fn parse_value(&self, namespace: &str, value: Value) -> Vec<(String, String)> {
+    match value {
+      Value::Null => vec![(String::from(namespace), String::from(""))],
+      Value::Number(n) => vec![(String::from(namespace), n.to_string())],
+      Value::String(s) => vec![(String::from(namespace), s)],
+      Value::Bool(b) => vec![(String::from(namespace), b.to_string())],
+      Value::Object(object_map) => object_map.into_iter()
+        .flat_map(|(s, v)| {
+          let inner_namespace = Self::concat_namespace(namespace, s);
+          self.parse_value(&inner_namespace, v)
+        })
+        .collect::<Vec<(String, String)>>(),
+      Value::Array(values) => match self.0.list_handling() {
+        ListHandling::SingleProp => if Self::has_only_primitives(&values) {
+          let list_val = values.iter().map(|it| it.to_string()).fold(String::new(), |mut a, b| {
+            a.push_str(&b);
+            a
+          });
+          vec![(String::from(namespace), list_val)]
+        } else {
+          vec![]
+        },
+        ListHandling::MultiProp => values.into_iter().enumerate()
+          .flat_map(|(i, v)| {
+            let inner_namespace = Self::concat_namespace(namespace, i.to_string());
+            self.parse_value(&inner_namespace, v)
+          })
+          .collect::<Vec<(String, String)>>(),
+      },
+    }
+  }
+
+  fn concat_namespace(namespace: &str, sub_key: String) -> String {
+    let mut inner_namespace = String::from(namespace);
+    inner_namespace.push('.');
+    inner_namespace.push_str(&sub_key);
+    inner_namespace
+  }
+
+  fn has_only_primitives(values: &[Value]) -> bool {
+    values.iter().all(|v| match v {
+      Value::Array { .. } | Value::Object { .. } => false,
+      _ => true
+    })
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use std::path::{Path, PathBuf};
+
   use crate::app_config::Config;
   use crate::app_config::ListHandling::MultiProp;
   use crate::props::Properties;
