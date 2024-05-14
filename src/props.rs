@@ -62,7 +62,7 @@ impl Properties {
 struct PropertiesBuilder<'a>(&'a Config);
 
 impl<'a> PropertiesBuilder<'_> {
-  fn build(&'a self, value: Value) -> Result<Properties, PropertyConstructionError> {
+  fn build(&self, value: Value) -> Result<Properties, PropertyConstructionError> {
     match value {
       Value::Object(object_map) => Ok(self.parse_internal(object_map)),
       Value::Null => Ok(Properties::empty()),
@@ -127,10 +127,7 @@ impl<'a> PropertiesBuilder<'_> {
 
 #[cfg(test)]
 mod tests {
-  use std::path::{Path, PathBuf};
-
   use crate::app_config::Config;
-  use crate::app_config::ListHandling::MultiProp;
   use crate::props::Properties;
 
   fn assert_key_has_value(prop: &Properties, key: &str, expected: &str) {
