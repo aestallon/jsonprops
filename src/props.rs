@@ -25,7 +25,7 @@ impl Display for PropertyConstructionError {
     match self {
       TopLevelPrimitiveError(v) => write!(
         f, "JSON value is a primitive, which cannot be formatted as properties: {}",
-        v.to_string()),
+        v),
       TopLevelArrayError(_) => write!(
         f, "JSON value is an array, which cannot be formatted as properties.\n\
         Break up the JSON into individual objects and convert them separately!"),
@@ -36,7 +36,7 @@ impl Display for PropertyConstructionError {
 impl Error for PropertyConstructionError {}
 
 impl Properties {
-  pub fn try_from(value: Value, config: &Config) -> Result<Self, PropertyConstructionError> {
+  pub fn create(value: Value, config: &Config) -> Result<Self, PropertyConstructionError> {
     PropertiesBuilder(config).build(value)
   }
 
@@ -45,23 +45,28 @@ impl Properties {
       props: BTreeMap::new()
     }
   }
-}
 
-impl Properties {
   pub fn export(self, path: &Path) -> Result<(), anyhow::Error> {
     let f = fs::File::create(path)?;
     let mut w = BufWriter::new(f);
     for (k, v) in self.props {
-      write!(w, "{k}={v}\n")?;
+      writeln!(w, "{k}={v}")?;
     }
     w.flush()?;
+    Ok(())
+  }
+
+  pub fn print(self) -> Result<(), anyhow::Error> {
+    for (k, v) in self.props {
+      println!("{k}={v}");
+    }
     Ok(())
   }
 }
 
 struct PropertiesBuilder<'a>(&'a Config);
 
-impl<'a> PropertiesBuilder<'_> {
+impl PropertiesBuilder<'_> {
   fn build(&self, value: Value) -> Result<Properties, PropertyConstructionError> {
     match value {
       Value::Object(object_map) => Ok(self.parse_internal(object_map)),
@@ -118,10 +123,7 @@ impl<'a> PropertiesBuilder<'_> {
   }
 
   fn has_only_primitives(values: &[Value]) -> bool {
-    values.iter().all(|v| match v {
-      Value::Array { .. } | Value::Object { .. } => false,
-      _ => true
-    })
+    values.iter().all(|v| !matches!(v, Value::Array { .. } | Value::Object { .. }))
   }
 }
 
@@ -131,7 +133,7 @@ mod tests {
   use crate::props::Properties;
 
   fn assert_key_has_value(prop: &Properties, key: &str, expected: &str) {
-    let actual = prop.props.get(key).expect(&format!("key {key} is present"));
+    let actual = prop.props.get(key).unwrap_or_else(|| panic!("key {key} is present"));
     assert_eq!(actual, expected);
   }
 
@@ -143,7 +145,7 @@ mod tests {
         "b" : "b value",
         "c" : false
     });
-    let prop = Properties::try_from(value, &config).expect("JSON is parsed");
+    let prop = Properties::create(value, &config).expect("JSON is parsed");
     assert_key_has_value(&prop, "a", "a value");
     assert_key_has_value(&prop, "b", "b value");
     assert_key_has_value(&prop, "c", "false");
@@ -163,7 +165,7 @@ mod tests {
         "foo" : 999
       }
     });
-    let prop = Properties::try_from(value, &config).expect("JSON is parsed");
+    let prop = Properties::create(value, &config).expect("JSON is parsed");
     assert_eq!(prop.props.len(), 5);
     assert_key_has_value(&prop, "a", "a value");
     assert_key_has_value(&prop, "b.foo", "123");

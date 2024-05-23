@@ -1,5 +1,8 @@
 use std::fs;
+use std::time::SystemTime;
 
+use clap::Parser;
+use log::debug;
 use serde_json::Value;
 
 use crate::app_config::Config;
@@ -8,17 +11,42 @@ use crate::props::Properties;
 mod app_config;
 mod props;
 
-static STR_EMPTY: &'static str = "";
+static STR_EMPTY: &str = "";
 
-fn main() {
-  let config: Config = Config::from_args(std::env::args()).expect("parsing arguments failed");
-  let res = parse_json(&config)
-    .and_then(|json| Properties::try_from(json, &config).map_err(anyhow::Error::new))
-    .and_then(|prop| prop.export(&config.dest()));
-  match res { 
-    Err(e) => eprintln!("{e}"),
-    _ => println!("Done!")
-  }
+fn main() -> anyhow::Result<()> {
+  let config: Config = parse_config()?;
+  setup_logger(&config)?;
+  debug!("Logger initialised: Configuration is: {:?}", &config);
+  parse_json(&config)
+    .and_then(|json| Properties::create(json, &config).map_err(anyhow::Error::new))
+    .and_then(|prop| match config.dest() {
+      Some(p) => { prop.export(p) }
+      None => { prop.print() }
+    })
+}
+
+fn parse_config() -> anyhow::Result<Config> {
+  Config::parse().validate().map_err(anyhow::Error::new)
+}
+
+fn setup_logger(config: &Config) -> Result<(), fern::InitError> {
+  let level_filter = if config.debug { log::LevelFilter::Debug } else { log::LevelFilter::Info };
+  println!("{level_filter:?}");
+  fern::Dispatch::new()
+    .format(|out, message, record| {
+      out.finish(format_args!(
+        "[{} {} {}] {}",
+        humantime::format_rfc3339_seconds(SystemTime::now()),
+        record.level(),
+        record.target(),
+        message
+      ))
+    })
+    .level(level_filter)
+    .chain(std::io::stdout())
+    .chain(fern::log_file("output.log")?)
+    .apply()?;
+  Ok(())
 }
 
 fn parse_json(config: &Config) -> anyhow::Result<Value> {
