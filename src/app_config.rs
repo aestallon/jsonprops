@@ -29,12 +29,28 @@ pub struct Config {
   /// Defines the behaviour for handling lists.
   #[arg(short, long, value_enum, default_value_t = ListHandling::SingleProp)]
   list_handling: ListHandling,
+
+  /// Defines the character sequence for separating keys and values.
+  #[arg(short, long, value_enum, default_value_t = EntrySeparator::Equals)]
+  entry_separator: EntrySeparator,
+
+  #[arg(long)]
+  pub discard_wsp: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 pub enum ListHandling {
   SingleProp,
   MultiProp,
+}
+
+const COLON: &str = ":";
+const EQ: &str = "=";
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
+pub enum EntrySeparator {
+  Colon,
+  Equals,
 }
 
 #[derive(Debug)]
@@ -61,6 +77,7 @@ impl Config {
       dest: None,
       debug: true,
       list_handling: ListHandling::MultiProp,
+      entry_separator: EntrySeparator::Equals
     }
   }
 
@@ -106,5 +123,12 @@ impl Config {
 
   pub fn list_handling(&self) -> &ListHandling {
     &self.list_handling
+  }
+
+  pub fn entry_separator(&self) -> &'static str {
+    match self.entry_separator {
+      EntrySeparator::Equals => EQ,
+      EntrySeparator::Colon => COLON
+    }
   }
 }

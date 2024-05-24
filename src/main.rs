@@ -11,7 +11,7 @@ use crate::props::Properties;
 mod app_config;
 mod props;
 
-static STR_EMPTY: &str = "";
+const STR_EMPTY: &str = "";
 
 fn main() -> anyhow::Result<()> {
   let config: Config = parse_config()?;
@@ -20,8 +20,8 @@ fn main() -> anyhow::Result<()> {
   parse_json(&config)
     .and_then(|json| Properties::create(json, &config).map_err(anyhow::Error::new))
     .and_then(|prop| match config.dest() {
-      Some(p) => { prop.export(p) }
-      None => { prop.print() }
+      Some(p) => { prop.export(p, &config) }
+      None => { prop.print(&config) }
     })
 }
 
