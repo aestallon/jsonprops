@@ -93,11 +93,7 @@ impl Config {
 
     if let Some(dest) = &self.dest {
       let _ = dest.try_exists().map_err(|_| Self::invalid_path_error(dest))?;
-    } else {
-      debug!("No output file is configured. Preparing to write to std out: {:?}", &self);
     }
-
-    info!("Config is ok: {:?}", &self);
 
     Ok(self)
   }
