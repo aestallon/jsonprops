@@ -3,10 +3,9 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::io::{BufWriter, Write};
-use std::ops::Add;
 use std::path::Path;
-use log::debug;
 
+use log::debug;
 use serde_json::Value;
 
 use crate::app_config::{Config, ListHandling};
@@ -96,7 +95,7 @@ impl PropertiesBuilder<'_> {
       Value::Bool(b) => vec![(String::from(namespace), b.to_string())],
       Value::Object(object_map) => object_map.into_iter()
         .flat_map(|(s, v)| {
-          let inner_namespace = Self::concat_namespace(namespace, s);
+          let inner_namespace = Self::concat_namespace(namespace, &s);
           self.parse_value(&inner_namespace, v)
         })
         .collect::<Vec<(String, String)>>(),
@@ -117,7 +116,7 @@ impl PropertiesBuilder<'_> {
         },
         ListHandling::MultiProp => values.into_iter().enumerate()
           .flat_map(|(i, v)| {
-            let inner_namespace = Self::concat_namespace(namespace, i.to_string());
+            let inner_namespace = Self::concat_namespace(namespace, &i.to_string());
             self.parse_value(&inner_namespace, v)
           })
           .collect::<Vec<(String, String)>>(),
@@ -125,10 +124,11 @@ impl PropertiesBuilder<'_> {
     }
   }
 
-  fn concat_namespace(namespace: &str, sub_key: String) -> String {
-    let mut inner_namespace = String::from(namespace);
+  fn concat_namespace(namespace: &str, sub_key: &str) -> String {
+    let mut inner_namespace = String::with_capacity(namespace.len() + sub_key.len() + 1);
+    inner_namespace.push_str(namespace);
     inner_namespace.push('.');
-    inner_namespace.push_str(&sub_key);
+    inner_namespace.push_str(sub_key);
     inner_namespace
   }
 
@@ -175,7 +175,7 @@ impl WhiteSpaceNormalised for String {
   /// If the provided argument is `false`, a leading backslash is inserted if necessary to preserve
   /// the leading whitespace:
   /// - `"bar"` will be left unchanged
-  /// - `"    bar"` will be rendered as `"\    bar"` 
+  /// - `"    bar"` will be rendered as `"\    bar"`
   fn normalise(self, discard_wsp: bool) -> Self {
     let starts_with_wsp = match self.chars().next() {
       Some(c) => c.is_whitespace(),
