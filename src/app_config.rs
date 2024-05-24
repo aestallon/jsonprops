@@ -3,7 +3,6 @@ use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, ValueEnum};
-use log::{debug, info};
 
 use crate::STR_EMPTY;
 
@@ -71,6 +70,8 @@ impl Display for ConfigValidationError {
 impl Error for ConfigValidationError {}
 
 impl Config {
+  // This is here only to allow module props tests to create a config:
+  #[allow(dead_code)]
   pub fn empty() -> Config {
     Config {
       source: PathBuf::new(),

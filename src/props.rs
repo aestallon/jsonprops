@@ -38,8 +38,8 @@ impl Display for PropertyConstructionError {
 impl Error for PropertyConstructionError {}
 
 impl Properties {
-  pub fn create(value: Value, config: &Config) -> Result<Self, PropertyConstructionError> {
-    PropertiesBuilder(config).build(value)
+  pub fn create(value: Value, config: &Config) -> anyhow::Result<Self> {
+    PropertiesBuilder(config).build(value).map_err(anyhow::Error::new)
   }
 
   fn empty() -> Self {

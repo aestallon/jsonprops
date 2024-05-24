@@ -18,8 +18,12 @@ fn main() -> anyhow::Result<()> {
   let config: Config = parse_config()?;
   setup_logger(&config)?;
   debug!("Logger initialised: Configuration is: {:?}", &config);
+  if config.dest().is_none() {
+    debug!("No destination file specified. Writing to standard output...");
+  }
+
   parse_json(&config)
-    .and_then(|json| Properties::create(json, &config).map_err(anyhow::Error::new))
+    .and_then(|json| Properties::create(json, &config))
     .and_then(|prop| match config.dest() {
       Some(p) => { prop.export(p, &config) }
       None => { prop.print(&config) }
