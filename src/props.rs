@@ -11,6 +11,7 @@ use serde_json::Value;
 
 use crate::app_config::{Config, ListHandling};
 use crate::props::PropertyConstructionError::{TopLevelArrayError, TopLevelPrimitiveError};
+use crate::STR_COMMA;
 
 pub struct Properties {
   props: BTreeMap<String, String>,
@@ -101,7 +102,10 @@ impl PropertiesBuilder<'_> {
         .collect::<Vec<(String, String)>>(),
       Value::Array(values) => match self.0.list_handling() {
         ListHandling::SingleProp => if Self::has_only_primitives(&values) {
-          let list_val = values.iter().map(|it| it.to_string()).collect::<Vec<String>>().join(",");
+          let list_val = values.into_iter()
+            .map(Self::primitive_to_string)
+            .collect::<Vec<String>>()
+            .join(STR_COMMA);
           vec![(String::from(namespace), list_val.normalise(self.0.discard_wsp))]
         } else {
           debug!(
@@ -130,6 +134,14 @@ impl PropertiesBuilder<'_> {
 
   fn has_only_primitives(values: &[Value]) -> bool {
     values.iter().all(|v| !matches!(v, Value::Array { .. } | Value::Object { .. }))
+  }
+
+  fn primitive_to_string(value: Value) -> String {
+    match value {
+      Value::String(s) => s,
+      Value::Bool { .. } | Value::Number { .. } | Value::Null => value.to_string(),
+      _ => unreachable!()
+    }
   }
 }
 

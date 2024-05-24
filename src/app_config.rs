@@ -77,7 +77,8 @@ impl Config {
       dest: None,
       debug: true,
       list_handling: ListHandling::MultiProp,
-      entry_separator: EntrySeparator::Equals
+      entry_separator: EntrySeparator::Equals,
+      discard_wsp: false,
     }
   }
 

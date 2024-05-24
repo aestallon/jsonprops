@@ -12,6 +12,7 @@ mod app_config;
 mod props;
 
 const STR_EMPTY: &str = "";
+const STR_COMMA: &str = ",";
 
 fn main() -> anyhow::Result<()> {
   let config: Config = parse_config()?;
