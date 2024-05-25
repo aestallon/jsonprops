@@ -1,9 +1,8 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::fs;
+use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::Path;
 
 use log::debug;
 use serde_json::Value;
@@ -48,23 +47,18 @@ impl Properties {
     }
   }
 
-  pub fn export(self, path: &Path, config: &Config) -> Result<(), anyhow::Error> {
+  pub fn export(self, config: &Config) -> anyhow::Result<()> {
+    let out = match config.dest() {
+      None => Box::new(std::io::stdout()) as Box<dyn Write>,
+      Some(p) => Box::new(File::create(p)?) as Box<dyn Write>,
+    };
+    let mut w = BufWriter::new(out);
+
     let sep = config.entry_separator();
-    let f = fs::File::create(path)?;
-    let mut w = BufWriter::new(f);
     for (k, v) in self.props {
       writeln!(w, "{k}{sep}{v}")?;
     }
-    w.flush()?;
-    Ok(())
-  }
-
-  pub fn print(self, config: &Config) -> Result<(), anyhow::Error> {
-    let sep = config.entry_separator();
-    for (k, v) in self.props {
-      println!("{k}{sep}{v}");
-    }
-    Ok(())
+    w.flush().map_err(anyhow::Error::new)
   }
 }
 
@@ -98,7 +92,7 @@ impl PropertiesBuilder<'_> {
           let inner_namespace = Self::concat_namespace(namespace, &s);
           self.parse_value(&inner_namespace, v)
         })
-        .collect::<Vec<(String, String)>>(),
+        .collect(),
       Value::Array(values) => match self.0.list_handling() {
         ListHandling::SingleProp => if Self::has_only_primitives(&values) {
           let list_val = values.into_iter()
@@ -119,7 +113,7 @@ impl PropertiesBuilder<'_> {
             let inner_namespace = Self::concat_namespace(namespace, &i.to_string());
             self.parse_value(&inner_namespace, v)
           })
-          .collect::<Vec<(String, String)>>(),
+          .collect(),
       },
     }
   }

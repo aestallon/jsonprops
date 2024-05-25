@@ -24,10 +24,7 @@ fn main() -> anyhow::Result<()> {
 
   parse_json(&config)
     .and_then(|json| Properties::create(json, &config))
-    .and_then(|prop| match config.dest() {
-      Some(p) => { prop.export(p, &config) }
-      None => { prop.print(&config) }
-    })
+    .and_then(|prop| prop.export(&config))
 }
 
 fn parse_config() -> anyhow::Result<Config> {
@@ -36,7 +33,6 @@ fn parse_config() -> anyhow::Result<Config> {
 
 fn setup_logger(config: &Config) -> Result<(), fern::InitError> {
   let level_filter = if config.debug { log::LevelFilter::Debug } else { log::LevelFilter::Info };
-  println!("{level_filter:?}");
   fern::Dispatch::new()
     .format(|out, message, record| {
       out.finish(format_args!(
