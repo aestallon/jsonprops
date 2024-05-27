@@ -10,9 +10,7 @@ use crate::props::Properties;
 
 mod app_config;
 mod props;
-
-const STR_EMPTY: &str = "";
-const STR_COMMA: &str = ",";
+mod str_constant;
 
 fn main() -> anyhow::Result<()> {
   let config: Config = parse_config()?;

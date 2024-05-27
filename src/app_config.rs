@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, ValueEnum};
 
-use crate::STR_EMPTY;
+use crate::str_constant;
 
 #[derive(Parser, Debug)]
 pub struct Config {
@@ -43,13 +43,12 @@ pub enum ListHandling {
   MultiProp,
 }
 
-const COLON: &str = ":";
-const EQ: &str = "=";
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 pub enum EntrySeparator {
   Colon,
   Equals,
+  Space,
 }
 
 #[derive(Debug)]
@@ -104,7 +103,7 @@ impl Config {
   }
 
   fn path_to_string(path: &Path) -> String {
-    String::from(path.to_str().unwrap_or(STR_EMPTY))
+    String::from(path.to_str().unwrap_or(str_constant::EMPTY))
   }
 
   pub fn source(&self) -> &Path {
@@ -112,11 +111,7 @@ impl Config {
   }
 
   pub fn dest(&self) -> Option<&Path> {
-    if let Some(p) = &self.dest {
-      Some(p)
-    } else {
-      None
-    }
+    self.dest.as_deref()
   }
 
   pub fn list_handling(&self) -> &ListHandling {
@@ -125,8 +120,9 @@ impl Config {
 
   pub fn entry_separator(&self) -> &'static str {
     match self.entry_separator {
-      EntrySeparator::Equals => EQ,
-      EntrySeparator::Colon => COLON
+      EntrySeparator::Equals => str_constant::EQ,
+      EntrySeparator::Colon => str_constant::COLON,
+      EntrySeparator::Space => str_constant::SPACE,
     }
   }
 }

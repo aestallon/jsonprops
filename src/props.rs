@@ -1,18 +1,20 @@
 use std::collections::BTreeMap;
 use std::error::Error;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::str::FromStr;
 
 use log::debug;
 use serde_json::Value;
 
 use crate::app_config::{Config, ListHandling};
+use crate::props::prop_key::{PropKey, PropKeyCreationError};
 use crate::props::PropertyConstructionError::{TopLevelArrayError, TopLevelPrimitiveError};
-use crate::STR_COMMA;
+use crate::str_constant;
 
 pub struct Properties {
-  props: BTreeMap<String, String>,
+  props: BTreeMap<PropKey, String>,
 }
 
 #[derive(Debug)]
@@ -75,18 +77,26 @@ impl PropertiesBuilder<'_> {
   }
 
   fn parse_internal(&self, object_map: serde_json::Map<String, Value>) -> Properties {
-    let props: BTreeMap<String, String> = object_map.into_iter()
+    let props: BTreeMap<PropKey, String> = object_map.into_iter()
       .flat_map(|(s, v)| self.parse_value(&s, v).into_iter())
       .collect();
     Properties { props }
   }
 
-  fn parse_value(&self, namespace: &str, value: Value) -> Vec<(String, String)> {
+  fn parse_value(&self, namespace: &str, value: Value) -> Vec<(PropKey, String)> {
+    let key: PropKey;
+    if let Ok(k) = PropKey::from_str(namespace) {
+      key = k;
+    } else {
+      // TODO: Log
+      return vec![];
+    }
+
     match value {
-      Value::Null => vec![(String::from(namespace), String::from(""))],
-      Value::Number(n) => vec![(String::from(namespace), n.to_string())],
-      Value::String(s) => vec![(String::from(namespace), s.normalise(self.0.discard_wsp))],
-      Value::Bool(b) => vec![(String::from(namespace), b.to_string())],
+      Value::Null => vec![(key, String::from(""))],
+      Value::Number(n) => vec![(key, n.to_string())],
+      Value::String(s) => vec![(key, s.normalise(self.0.discard_wsp))],
+      Value::Bool(b) => vec![(key, b.to_string())],
       Value::Object(object_map) => object_map.into_iter()
         .flat_map(|(s, v)| {
           let inner_namespace = Self::concat_namespace(namespace, &s);
@@ -98,8 +108,8 @@ impl PropertiesBuilder<'_> {
           let list_val = values.into_iter()
             .map(Self::primitive_to_string)
             .collect::<Vec<String>>()
-            .join(STR_COMMA);
-          vec![(String::from(namespace), list_val.normalise(self.0.discard_wsp))]
+            .join(str_constant::COMMA);
+          vec![(key, list_val.normalise(self.0.discard_wsp))]
         } else {
           debug!(
             "{0} denotes a list, and its members are not exclusively primitives!\n\
@@ -189,13 +199,81 @@ impl WhiteSpaceNormalised for String {
   }
 }
 
+mod prop_key {
+  use std::error::Error;
+  use std::fmt::{Debug, Display, Formatter};
+  use std::str::FromStr;
+
+  #[derive(PartialEq, PartialOrd, Eq, Ord)]
+  pub(super) struct PropKey {
+    inner: String,
+  }
+
+  impl PropKey {
+    pub(super) fn as_str(&self) -> &str {
+      &self.inner
+    }
+  }
+
+  impl Display for PropKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+      f.write_str(&(self.inner))
+    }
+  }
+
+  pub struct PropKeyCreationError {
+    s: String,
+  }
+
+  impl Debug for PropKeyCreationError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+      todo!()
+    }
+  }
+
+
+  impl Display for PropKeyCreationError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+      todo!()
+    }
+  }
+
+
+  impl Error for PropKeyCreationError {}
+
+  impl FromStr for PropKey {
+    type Err = PropKeyCreationError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+      let inner = s.chars().fold(
+        String::with_capacity(s.len()),
+        |mut acc, c| {
+          if c == ' ' || c == ':' || c == '=' {
+            acc.extend(&['\\', c]);
+          } else {
+            acc.push(c);
+          }
+          acc
+        });
+
+      Ok(PropKey {
+        inner,
+      })
+    }
+  }
+}
+
 #[cfg(test)]
 mod tests {
+  use std::str::FromStr;
+
   use crate::app_config::Config;
+  use crate::props::prop_key::PropKey;
   use crate::props::Properties;
 
   fn assert_key_has_value(prop: &Properties, key: &str, expected: &str) {
-    let actual = prop.props.get(key).unwrap_or_else(|| panic!("key {key} is present"));
+    let k = PropKey::from_str(key).unwrap();
+    let actual = prop.props.get(&k).unwrap_or_else(|| panic!("key {key} is present"));
     assert_eq!(actual, expected);
   }
 
@@ -234,5 +312,17 @@ mod tests {
     assert_key_has_value(&prop, "b.bar", "bar val");
     assert_key_has_value(&prop, "b.baz", "false");
     assert_key_has_value(&prop, "c.foo", "999");
+  }
+
+  #[test]
+  fn prop_key_test_1() {
+    let k1 = PropKey::from_str("foo").expect("should have been valid");
+    assert_eq!(k1.as_str(), "foo");
+  }
+
+  #[test]
+  fn prop_key_test_2() {
+    let k1 = PropKey::from_str("fo:o").expect("should have been valid");
+    assert_eq!(k1.as_str(), "fo\\:o");
   }
 }
