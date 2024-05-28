@@ -31,7 +31,7 @@ fn parse_config() -> anyhow::Result<Config> {
 
 fn setup_logger(config: &Config) -> Result<(), fern::InitError> {
   let level_filter = if config.debug { log::LevelFilter::Debug } else { log::LevelFilter::Info };
-  fern::Dispatch::new()
+  let mut logger = fern::Dispatch::new()
     .format(|out, message, record| {
       out.finish(format_args!(
         "[{} {} {}] {}",
@@ -41,10 +41,11 @@ fn setup_logger(config: &Config) -> Result<(), fern::InitError> {
         message
       ))
     })
-    .level(level_filter)
-    .chain(std::io::stdout())
-    .chain(fern::log_file("output.log")?)
-    .apply()?;
+    .level(level_filter);
+  if config.debug || config.dest().is_some() {
+    logger = logger.chain(std::io::stdout());
+  }
+  logger.chain(fern::log_file("output.log")?).apply()?;
   Ok(())
 }
 
