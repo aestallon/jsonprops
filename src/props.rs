@@ -3,13 +3,12 @@ use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::str::FromStr;
 
 use log::debug;
 use serde_json::Value;
 
 use crate::app_config::{Config, ListHandling};
-use crate::props::prop_key::{PropKey, PropKeyCreationError};
+use crate::props::prop_key::PropKey;
 use crate::props::PropertyConstructionError::{TopLevelArrayError, TopLevelPrimitiveError};
 use crate::str_constant;
 
@@ -84,14 +83,7 @@ impl PropertiesBuilder<'_> {
   }
 
   fn parse_value(&self, namespace: &str, value: Value) -> Vec<(PropKey, String)> {
-    let key: PropKey;
-    if let Ok(k) = PropKey::from_str(namespace) {
-      key = k;
-    } else {
-      // TODO: Log
-      return vec![];
-    }
-
+    let key = PropKey::new(namespace);
     match value {
       Value::Null => vec![(key, String::from(""))],
       Value::Number(n) => vec![(key, n.to_string())],
@@ -200,79 +192,52 @@ impl WhiteSpaceNormalised for String {
 }
 
 mod prop_key {
-  use std::error::Error;
-  use std::fmt::{Debug, Display, Formatter};
-  use std::str::FromStr;
+  use std::fmt::{Display, Formatter};
 
   #[derive(PartialEq, PartialOrd, Eq, Ord)]
-  pub(super) struct PropKey {
-    inner: String,
-  }
+  pub(super) struct PropKey(String);
 
   impl PropKey {
-    pub(super) fn as_str(&self) -> &str {
-      &self.inner
+    pub(super) fn new(s: &str) -> Self {
+      // if the string starts with '#', we need to escape it. If it doesn't there is no need (only 
+      // line commencing '#' would signal a comment line).
+      // There is a possibility the string starts with leading whitespace and the first
+      // non-whitespace character is a '#' => the escaping loop later accounts for that: escaping
+      // " #foo" as "\ #foo" is sufficient.
+      let mut inner = if let Some('#') = s.chars().next() {
+        let mut temp = String::with_capacity(s.len() + 1);
+        temp.push('\\');
+        temp
+      } else {
+        String::with_capacity(s.len())
+      };
+      for c in s.chars() {
+        if c == ' ' || c == ':' || c == '=' {
+          inner.extend(&['\\', c]);
+        } else {
+          inner.push(c);
+        }
+      }
+
+      PropKey(inner)
     }
   }
 
   impl Display for PropKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-      f.write_str(&(self.inner))
-    }
-  }
-
-  pub struct PropKeyCreationError {
-    s: String,
-  }
-
-  impl Debug for PropKeyCreationError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-      todo!()
-    }
-  }
-
-
-  impl Display for PropKeyCreationError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-      todo!()
-    }
-  }
-
-
-  impl Error for PropKeyCreationError {}
-
-  impl FromStr for PropKey {
-    type Err = PropKeyCreationError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-      let inner = s.chars().fold(
-        String::with_capacity(s.len()),
-        |mut acc, c| {
-          if c == ' ' || c == ':' || c == '=' {
-            acc.extend(&['\\', c]);
-          } else {
-            acc.push(c);
-          }
-          acc
-        });
-
-      Ok(PropKey {
-        inner,
-      })
+      f.write_str(&(self.0))
     }
   }
 }
 
 #[cfg(test)]
 mod tests {
-  use std::str::FromStr;
-
   use crate::app_config::Config;
   use crate::props::prop_key::PropKey;
   use crate::props::Properties;
 
   fn assert_key_has_value(prop: &Properties, key: &str, expected: &str) {
-    let k = PropKey::from_str(key).unwrap();
+    let k = PropKey::new(key);
     let actual = prop.props.get(&k).unwrap_or_else(|| panic!("key {key} is present"));
     assert_eq!(actual, expected);
   }
@@ -315,14 +280,26 @@ mod tests {
   }
 
   #[test]
-  fn prop_key_test_1() {
-    let k1 = PropKey::from_str("foo").expect("should have been valid");
-    assert_eq!(k1.as_str(), "foo");
+  fn creating_prop_key_with_a_simple_string_leaves_the_string_unchanged() {
+    let k = PropKey::new("foo");
+    assert_eq!(format!("{k}"), "foo");
   }
 
   #[test]
-  fn prop_key_test_2() {
-    let k1 = PropKey::from_str("fo:o").expect("should have been valid");
-    assert_eq!(k1.as_str(), "fo\\:o");
+  fn creating_prop_key_with_colon_has_the_colon_escaped() {
+    let k = PropKey::new("fo:o");
+    assert_eq!(format!("{k}"), "fo\\:o");
+  }
+  
+  #[test]
+  fn creating_prop_key_with_leading_number_sign_escapes_the_first_character() {
+    let k = PropKey::new("#foo");
+    assert_eq!(format!("{k}"), "\\#foo");
+  }
+  
+  #[test]
+  fn creating_prop_key_with_leading_wsp_and_number_sign_escapes_the_wsp_only() {
+    let k = PropKey::new("  #foo");
+    assert_eq!(format!("{k}"), "\\ \\ #foo");
   }
 }
