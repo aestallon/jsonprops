@@ -9,11 +9,12 @@ use serde_json::Value;
 
 use crate::app_config::{Config, ListHandling};
 use crate::props::prop_key::PropKey;
+use crate::props::prop_val::PropVal;
 use crate::props::PropertyConstructionError::{TopLevelArrayError, TopLevelPrimitiveError};
 use crate::str_constant;
 
 pub struct Properties {
-  props: BTreeMap<PropKey, String>,
+  props: BTreeMap<PropKey, PropVal>,
 }
 
 #[derive(Debug)]
@@ -76,19 +77,19 @@ impl PropertiesBuilder<'_> {
   }
 
   fn parse_internal(&self, object_map: serde_json::Map<String, Value>) -> Properties {
-    let props: BTreeMap<PropKey, String> = object_map.into_iter()
+    let props: BTreeMap<PropKey, PropVal> = object_map.into_iter()
       .flat_map(|(s, v)| self.parse_value(&s, v).into_iter())
       .collect();
     Properties { props }
   }
 
-  fn parse_value(&self, namespace: &str, value: Value) -> Vec<(PropKey, String)> {
+  fn parse_value(&self, namespace: &str, value: Value) -> Vec<(PropKey, PropVal)> {
     let key = PropKey::new(namespace);
     match value {
-      Value::Null => vec![(key, String::from(""))],
-      Value::Number(n) => vec![(key, n.to_string())],
-      Value::String(s) => vec![(key, s.normalise(self.0.discard_wsp))],
-      Value::Bool(b) => vec![(key, b.to_string())],
+      Value::Null => vec![(key, PropVal::empty())],
+      Value::Number(n) => vec![(key, PropVal::of_num(n))],
+      Value::String(s) => vec![(key, PropVal::of_string(s, self.0.discard_wsp))],
+      Value::Bool(b) => vec![(key, PropVal::of_bool(b))],
       Value::Object(object_map) => object_map.into_iter()
         .flat_map(|(s, v)| {
           let inner_namespace = Self::concat_namespace(namespace, &s);
@@ -101,7 +102,7 @@ impl PropertiesBuilder<'_> {
             .map(Self::primitive_to_string)
             .collect::<Vec<String>>()
             .join(str_constant::COMMA);
-          vec![(key, list_val.normalise(self.0.discard_wsp))]
+          vec![(key, PropVal::of_string(list_val, self.0.discard_wsp))]
         } else {
           debug!(
             "{0} denotes a list, and its members are not exclusively primitives!\n\
@@ -141,56 +142,7 @@ impl PropertiesBuilder<'_> {
   }
 }
 
-/// .properties file behaviour
-///
-/// Trailing whitespace is always significant.
-///
-/// A leading whitespace is dropped because the following formats should yield the same result:
-/// ```properties
-/// key=val
-/// key = val
-/// ```
-/// (There are optional whitespaces around the entry separator.)
-/// To preserve the whitespace, it must be escaped with a backslash:
-/// ```properties
-/// key=\     val
-/// ```
-///
-trait WhiteSpaceNormalised {
-  /// Normalises a value to abide by the `.properties` file leading whitespace rules.
-  fn normalise(self, discard_wsp: bool) -> Self;
-}
-
-impl WhiteSpaceNormalised for String {
-  /// Normalises a [String] to abide by the `.properties` file leading whitespace rules.
-  ///
-  /// If the provided argument is `true` the provided [String] is trimmed of leading whitespace if
-  /// necessary.
-  /// - `"foo"` and `"    foo"` will both be rendered as `"foo"`
-  ///
-  /// If the provided argument is `false`, a leading backslash is inserted if necessary to preserve
-  /// the leading whitespace:
-  /// - `"bar"` will be left unchanged
-  /// - `"    bar"` will be rendered as `"\    bar"`
-  fn normalise(self, discard_wsp: bool) -> Self {
-    let starts_with_wsp = match self.chars().next() {
-      Some(c) => c.is_whitespace(),
-      _ => false,
-    };
-
-    if starts_with_wsp && discard_wsp {
-      self.trim_start().into()
-    } else if starts_with_wsp {
-      let mut ret = String::with_capacity(self.len() + 1);
-      ret.push('\\');
-      ret.push_str(&self);
-      ret
-    } else {
-      self
-    }
-  }
-}
-
+/// Property keys employing the necessary escaping logic.
 mod prop_key {
   use std::fmt::{Display, Formatter};
 
@@ -199,7 +151,7 @@ mod prop_key {
 
   impl PropKey {
     pub(super) fn new(s: &str) -> Self {
-      // if the string starts with '#', we need to escape it. If it doesn't there is no need (only 
+      // if the string starts with '#', we need to escape it. If it doesn't there is no need (only
       // line commencing '#' would signal a comment line).
       // There is a possibility the string starts with leading whitespace and the first
       // non-whitespace character is a '#' => the escaping loop later accounts for that: escaping
@@ -225,7 +177,92 @@ mod prop_key {
 
   impl Display for PropKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-      f.write_str(&(self.0))
+      self.0.fmt(f)
+    }
+  }
+}
+
+mod prop_val {
+  use std::fmt::{Display, Formatter};
+
+  const PROP_VAL_TRUE: &str = "true";
+  const PROP_VAL_FALSE: &str = "false";
+
+  #[derive(PartialEq, PartialOrd, Eq, Ord)]
+  pub(super) struct PropVal(String);
+
+  impl PropVal {
+    pub(super) fn empty() -> Self {
+      PropVal(String::new())
+    }
+
+    pub(super) fn of_bool(b: bool) -> Self {
+      let str_val = if b { PROP_VAL_TRUE } else { PROP_VAL_FALSE };
+      PropVal(String::from(str_val))
+    }
+
+    pub(super) fn of_num(n: serde_json::Number) -> Self {
+      PropVal(n.to_string())
+    }
+
+    pub(super) fn of_string(s: String, discard_wsp: bool) -> Self {
+      PropVal(s.normalise(discard_wsp))
+    }
+  }
+
+  impl Display for PropVal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+      self.0.fmt(f)
+    }
+  }
+
+  /// .properties file behaviour
+  ///
+  /// Trailing whitespace is always significant.
+  ///
+  /// A leading whitespace is dropped because the following formats should yield the same result:
+  /// ```properties
+  /// key=val
+  /// key = val
+  /// ```
+  /// (There are optional whitespaces around the entry separator.)
+  /// To preserve the whitespace, it must be escaped with a backslash:
+  /// ```properties
+  /// key=\     val
+  /// ```
+  ///
+  trait WhiteSpaceNormalised {
+    /// Normalises a value to abide by the `.properties` file leading whitespace rules.
+    fn normalise(self, discard_wsp: bool) -> Self;
+  }
+
+  impl WhiteSpaceNormalised for String {
+    /// Normalises a [String] to abide by the `.properties` file leading whitespace rules.
+    ///
+    /// If the provided argument is `true` the provided [String] is trimmed of leading whitespace if
+    /// necessary.
+    /// - `"foo"` and `"    foo"` will both be rendered as `"foo"`
+    ///
+    /// If the provided argument is `false`, a leading backslash is inserted if necessary to preserve
+    /// the leading whitespace:
+    /// - `"bar"` will be left unchanged
+    /// - `"    bar"` will be rendered as `"\    bar"`
+    fn normalise(self, discard_wsp: bool) -> Self {
+      let starts_with_wsp = match self.chars().next() {
+        Some(c) => c.is_whitespace(),
+        _ => false,
+      };
+
+      if starts_with_wsp && discard_wsp {
+        self.trim_start().into()
+      } else if starts_with_wsp {
+        let mut ret = String::with_capacity(self.len() + 1);
+        ret.push('\\');
+        ret.push_str(&self);
+        ret
+      } else {
+        self
+      }
     }
   }
 }
@@ -239,7 +276,7 @@ mod tests {
   fn assert_key_has_value(prop: &Properties, key: &str, expected: &str) {
     let k = PropKey::new(key);
     let actual = prop.props.get(&k).unwrap_or_else(|| panic!("key {key} is present"));
-    assert_eq!(actual, expected);
+    assert_eq!(format!("{actual}"), expected);
   }
 
   #[test]
@@ -290,13 +327,13 @@ mod tests {
     let k = PropKey::new("fo:o");
     assert_eq!(format!("{k}"), "fo\\:o");
   }
-  
+
   #[test]
   fn creating_prop_key_with_leading_number_sign_escapes_the_first_character() {
     let k = PropKey::new("#foo");
     assert_eq!(format!("{k}"), "\\#foo");
   }
-  
+
   #[test]
   fn creating_prop_key_with_leading_wsp_and_number_sign_escapes_the_wsp_only() {
     let k = PropKey::new("  #foo");
