@@ -13,6 +13,13 @@ mod props;
 mod str_constant;
 
 fn main() -> anyhow::Result<()> {
+  let config: Config = init()?;
+  parse_json(&config)
+    .and_then(|json| Properties::create(json, &config))
+    .and_then(|prop| prop.export(&config))
+}
+
+fn init() -> anyhow::Result<Config> {
   let config: Config = parse_config()?;
   setup_logger(&config)?;
   debug!("Logger initialised: Configuration is: {:?}", &config);
@@ -20,9 +27,7 @@ fn main() -> anyhow::Result<()> {
     debug!("No destination file specified. Writing to standard output...");
   }
 
-  parse_json(&config)
-    .and_then(|json| Properties::create(json, &config))
-    .and_then(|prop| prop.export(&config))
+  Ok(config)
 }
 
 fn parse_config() -> anyhow::Result<Config> {
